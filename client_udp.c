@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <math.h>
 
 #include "message.h"
 
@@ -28,6 +29,11 @@ int main(int argc, char * argv[])
     int wnd_ptr = 0;
     struct message fin;
     struct message ack;
+
+    time_t now;
+    double timeout_interval = 1;
+    double estimated_rtt = 1;
+    double dev_rtt = 0;
 
     if (argc==3) {
         host = argv[1];
@@ -78,6 +84,7 @@ int main(int argc, char * argv[])
         }
         if (wnd_ptr == WINDOW_SIZE) {
 retry:
+            now = time(NULL);
             for (int i = 0; i < WINDOW_SIZE; i++) {
                 if (sendto(s, &send_window[i], sizeof(struct message), 0, (struct sockaddr *) &sin, sock_len) < 0){
                     perror("SendTo Error\n");
@@ -87,7 +94,7 @@ retry:
             // wait for ack and retry if needed
             struct timeval tv;
             tv.tv_sec = 0;
-            tv.tv_usec = 1000;
+            tv.tv_usec = (int)(timeout_interval * 1000);
             if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
                 perror("setsockopt");
                 exit(1);
@@ -99,6 +106,10 @@ retry:
             if (ack.payload[0] != MESSAGE_ACK || ack.sequence_number != seq_num) {
                 goto retry;
             }
+            int rtt = time(NULL) - now;
+            dev_rtt = 0.75 * dev_rtt + 0.25 * fabs(rtt - estimated_rtt);
+            estimated_rtt = 0.9 * estimated_rtt + 0.1 * rtt;
+            timeout_interval = estimated_rtt + 4 * dev_rtt;
             wnd_ptr = 0;
         }
     }
