@@ -6,10 +6,10 @@ client_udp.out: client_udp.o
 server_udp.out: server_udp.o
 	$(CC) -o $@ $^ $(CFLAGS) $(LDLIBS)
 
-client_udp.o: client_udp.c
+client_udp.o: client_udp.c message.h
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-server_udp.o: server_udp.c
+server_udp.o: server_udp.c message.h
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 .PHONY: clean
