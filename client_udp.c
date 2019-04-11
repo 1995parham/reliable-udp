@@ -30,6 +30,7 @@ int main(int argc, char * argv[])
         fprintf(stderr, "Usage: ./client_udp host filename\n");
         exit(1);
     }
+
     /* translate host name into peer’s IP address */
     hp = gethostbyname(host);
     if (!hp) {
@@ -55,20 +56,20 @@ int main(int argc, char * argv[])
         exit(1);
     }
 
-    socklen_t sock_len= sizeof sin;
-    
+    socklen_t sock_len = sizeof sin;
+
     /* main loop: get and send lines of text */
     while(fgets(buf, 80, fp) != NULL){
         slen = strlen(buf);
         buf[slen] ='\0';
-        if(sendto(s, buf, slen+1, 0, (struct sockaddr *)&sin, sock_len)<0){
+        if(sendto(s, buf, slen+1, 0, (struct sockaddr *) &sin, sock_len) < 0){
             perror("SendTo Error\n");
             exit(1);
         }
 
     }
-    *buf = 0x02;    
-        if(sendto(s, buf, 1, 0, (struct sockaddr *)&sin, sock_len)<0){
+    *buf = 0x02;
+        if(sendto(s, buf, 1, 0, (struct sockaddr *)&sin, sock_len) < 0){
         perror("SendTo Error\n");
         exit(1);
     }

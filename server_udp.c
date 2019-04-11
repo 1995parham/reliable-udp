@@ -7,6 +7,7 @@
 #include <netdb.h>
 #include <time.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #define SERVER_PORT 5432
 #define MAX_LINE 256
@@ -14,12 +15,12 @@
 int main(int argc, char * argv[])
 {
     char *fname;
-    char buf[MAX_LINE];
+    char buf[MAX_LINE]; // recieve buffer
     struct sockaddr_in sin;
     int len;
     int s, i;
     struct timeval tv;
-    char seq_num = 1; 
+    char seq_num = 1;
     FILE *fp;
 
     if (argc==2) {
@@ -49,17 +50,18 @@ int main(int argc, char * argv[])
 
     socklen_t sock_len = sizeof sin;
 
+    /* open the given file to recieve into */
     fp = fopen(fname, "w");
     if (fp==NULL){
         printf("Can't open file\n");
         exit(1);
     }
-    
+
     while(1){
         len = recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr *)&sin, &sock_len);
         if(len == -1){
-                perror("PError");
-        }    
+                perror("recvfrom");
+        }
         else if(len == 1){
             if (buf[0] == 0x02){
                 printf("Transmission Complete\n");
@@ -68,13 +70,12 @@ int main(int argc, char * argv[])
             else{
                 perror("Error: Short packet\n");
             }
-        }    
+        }
         else if(len > 1){
             if(fputs((char *) buf, fp) < 1){
                 printf("fputs() error\n");
             }
         }
-
     }
     fclose(fp);
     close(s);
