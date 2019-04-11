@@ -11,7 +11,6 @@
 #include "message.h"
 
 #define SERVER_PORT 5432
-#define WINDOW_SIZE 10
 
 int main(int argc, char * argv[])
 {
@@ -28,6 +27,7 @@ int main(int argc, char * argv[])
     struct message send_window[WINDOW_SIZE];
     int wnd_ptr = 0;
     struct message fin;
+    struct message ack;
 
     if (argc==3) {
         host = argv[1];
@@ -77,6 +77,7 @@ int main(int argc, char * argv[])
             wnd_ptr++;
         }
         if (wnd_ptr == WINDOW_SIZE) {
+retry:
             for (int i = 0; i < WINDOW_SIZE; i++) {
                 if (sendto(s, &send_window[i], sizeof(struct message), 0, (struct sockaddr *) &sin, sock_len) < 0){
                     perror("SendTo Error\n");
@@ -84,25 +85,63 @@ int main(int argc, char * argv[])
                 }
             }
             // wait for ack and retry if needed
+            struct timeval tv;
+            tv.tv_sec = 0;
+            tv.tv_usec = 1000;
+            if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+                perror("setsockopt");
+                exit(1);
+            }
+            if (recvfrom(s, &ack, sizeof(struct message), 0, (struct sockaddr *)&sin, &sock_len) == 0) {
+                perror("recvfrom");
+                goto retry;
+            }
+            if (ack.payload[0] != MESSAGE_ACK || ack.sequence_number != seq_num) {
+                goto retry;
+            }
             wnd_ptr = 0;
         }
     }
 
-    for (int i = 0; i < wnd_ptr; i++) {
+    int empty_messages = wnd_ptr == 0 ? wnd_ptr : WINDOW_SIZE - wnd_ptr;
+    for (int i = 0; i < empty_messages; i++) {
+        send_window[wnd_ptr].sequence_number = seq_num++;
+        send_window[wnd_ptr].payload[0] = MESSAGE_EMPTY;
+        send_window[wnd_ptr].payload[1] = '\0';
+        wnd_ptr++;
+    }
+
+retry_last:
+    for (int i = 0; i < WINDOW_SIZE; i++) {
         if (sendto(s, &send_window[i], sizeof(struct message), 0, (struct sockaddr *) &sin, sock_len) < 0){
             perror("SendTo Error\n");
             exit(1);
         }
     }
-    // wait for ack and retry if needed
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 1000;
+    if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        perror("setsockopt");
+        exit(1);
+    }
+    if (recvfrom(s, &ack, sizeof(struct message), 0, (struct sockaddr *)&sin, &sock_len) == 0) {
+          perror("recvfrom");
+          goto retry_last;
+    }
+    if (ack.payload[0] != MESSAGE_ACK || ack.sequence_number != seq_num) {
+          goto retry_last;
+    }
 
     fin.sequence_number = seq_num++;
-    fin.payload[0] = 0x02;
+    fin.payload[0] = MESSAGE_FIN;
     fin.payload[1] = 0x0;
     if(sendto(s, &fin, sizeof(struct message), 0, (struct sockaddr *)&sin, sock_len) < 0){
         perror("SendTo Error\n");
         exit(1);
     }
+    // wait for ack and retry if needed
+
     fclose(fp);
 }
 

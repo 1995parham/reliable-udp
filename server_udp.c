@@ -17,15 +17,17 @@
 int main(int argc, char * argv[])
 {
     char *fname;
-    char buf[MAX_LINE]; // recieve buffer
+    char buf[WINDOW_SIZE][MAX_LINE]; // recieve buffer
     struct sockaddr_in sin;
     int len;
     int s, i;
     struct timeval tv;
-    char seq_num = 1;
+    int seq_num = 1;
+    int recv_seq;
     FILE *fp;
 
     struct message msg;
+    struct message ack;
 
     if (argc==2) {
         fname = argv[1];
@@ -61,28 +63,52 @@ int main(int argc, char * argv[])
     }
 
     while(1){
-        if (recvfrom(s, &msg, sizeof(struct message), 0, (struct sockaddr *)&sin, &sock_len) == 0) {
-                perror("recvfrom");
-        }
+retry:
+        recv_seq = seq_num;
 
-        strcpy(buf, msg.payload);
-        len = strlen(buf);
-        printf("Message SN: %d (len: %d)\n", msg.sequence_number, len);
-        if(len == 1){
-            if (buf[0] == 0x02){
-                printf("Transmission Complete\n");
-                break;
+        for (int i = 0; i < WINDOW_SIZE; i++) {
+            if (recvfrom(s, &msg, sizeof(struct message), 0, (struct sockaddr *)&sin, &sock_len) == 0) {
+                    perror("recvfrom");
+                    break;
             }
-            else{
-                perror("Error: Short packet\n");
+
+            strcpy(buf[i], msg.payload);
+            len = strlen(buf[i]);
+            printf("message recieved sn: %d - len: %d\n", msg.sequence_number, len);
+            if (msg.sequence_number != recv_seq) {
+                printf("unexpected message! sn: %d != %d\n", msg.sequence_number, recv_seq);
+                goto retry;
+            }
+            recv_seq++;
+            if(len == 1) {
+                if (buf[i][0] == MESSAGE_FIN) {
+                    printf("Transmission Complete\n");
+                    goto fin;
+                }
+                if (buf[i][0] == MESSAGE_EMPTY) {
+                    buf[i][0] = '\0';
+                }
+                else {
+                    perror("Error: Short packet\n");
+                }
             }
         }
-        else if(len > 1){
-            if(fputs((char *) buf, fp) < 1){
+        seq_num = recv_seq;
+        ack.sequence_number = seq_num;
+        ack.payload[0] = MESSAGE_ACK;
+        ack.payload[1] = 0x0;
+        if(sendto(s, &ack, sizeof(struct message), 0, (struct sockaddr *)&sin, sock_len) < 0){
+            perror("SendTo Error\n");
+            exit(1);
+        }
+        for (int i = 0; i < WINDOW_SIZE; i++) {
+            if(strlen(buf[i]) > 0 && fputs((char *) buf[i], fp) < 1) {
                 printf("fputs() error\n");
             }
         }
     }
+
+fin:
     fclose(fp);
     close(s);
 }
