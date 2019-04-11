@@ -8,9 +8,11 @@
 #include <time.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
+
+#include "message.h"
 
 #define SERVER_PORT 5432
-#define MAX_LINE 256
 
 int main(int argc, char * argv[])
 {
@@ -23,6 +25,8 @@ int main(int argc, char * argv[])
     char seq_num = 1;
     FILE *fp;
 
+    struct message msg;
+
     if (argc==2) {
         fname = argv[1];
     }
@@ -30,7 +34,6 @@ int main(int argc, char * argv[])
         fprintf(stderr, "usage: ./server_udp filename\n");
         exit(1);
     }
-
 
     /* build address data structure */
     bzero((char *)&sin, sizeof(sin));
@@ -58,11 +61,14 @@ int main(int argc, char * argv[])
     }
 
     while(1){
-        len = recvfrom(s, buf, sizeof(buf), 0, (struct sockaddr *)&sin, &sock_len);
-        if(len == -1){
+        if (recvfrom(s, &msg, sizeof(struct message), 0, (struct sockaddr *)&sin, &sock_len) == 0) {
                 perror("recvfrom");
         }
-        else if(len == 1){
+
+        strcpy(buf, msg.payload);
+        len = strlen(buf);
+        printf("Message SN: %d (len: %d)\n", msg.sequence_number, len);
+        if(len == 1){
             if (buf[0] == 0x02){
                 printf("Transmission Complete\n");
                 break;
