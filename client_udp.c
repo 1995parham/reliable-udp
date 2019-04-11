@@ -8,8 +8,10 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include "message.h"
+
 #define SERVER_PORT 5432
-#define MAX_LINE 80
+#define WINDOW_SIZE 10
 
 int main(int argc, char * argv[])
 {
@@ -21,6 +23,11 @@ int main(int argc, char * argv[])
     char buf[MAX_LINE];
     int s;
     int slen;
+    char seq_num = 1;
+
+    struct message send_window[WINDOW_SIZE];
+    int wnd_ptr = 0;
+    struct message fin;
 
     if (argc==3) {
         host = argv[1];
@@ -60,16 +67,39 @@ int main(int argc, char * argv[])
 
     /* main loop: get and send lines of text */
     while(fgets(buf, 80, fp) != NULL){
+        // replaces \n with nil
         slen = strlen(buf);
         buf[slen] ='\0';
-        if(sendto(s, buf, slen+1, 0, (struct sockaddr *) &sin, sock_len) < 0){
+
+        if (wnd_ptr < WINDOW_SIZE) {
+            send_window[wnd_ptr].sequence_number = seq_num++;
+            strcpy(send_window[wnd_ptr].payload, buf);
+            wnd_ptr++;
+        }
+        if (wnd_ptr == WINDOW_SIZE) {
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                if (sendto(s, &send_window[i], sizeof(struct message), 0, (struct sockaddr *) &sin, sock_len) < 0){
+                    perror("SendTo Error\n");
+                    exit(1);
+                }
+            }
+            // wait for ack and retry if needed
+            wnd_ptr = 0;
+        }
+    }
+
+    for (int i = 0; i < wnd_ptr; i++) {
+        if (sendto(s, &send_window[i], sizeof(struct message), 0, (struct sockaddr *) &sin, sock_len) < 0){
             perror("SendTo Error\n");
             exit(1);
         }
-
     }
-    *buf = 0x02;
-        if(sendto(s, buf, 1, 0, (struct sockaddr *)&sin, sock_len) < 0){
+    // wait for ack and retry if needed
+
+    fin.sequence_number = seq_num++;
+    fin.payload[0] = 0x02;
+    fin.payload[1] = 0x0;
+    if(sendto(s, &fin, sizeof(struct message), 0, (struct sockaddr *)&sin, sock_len) < 0){
         perror("SendTo Error\n");
         exit(1);
     }
